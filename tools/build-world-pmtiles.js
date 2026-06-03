@@ -44,12 +44,38 @@ async function main () {
 
   fs.mkdirSync(path.dirname(output), { recursive: true })
   const tempDataPath = `${output}.tiles.tmp`
-  fs.rmSync(tempDataPath, { force: true })
+  const checkpointPath = `${output}.checkpoint.json`
+  const entriesLogPath = `${output}.entries.ndjson`
   fs.rmSync(output, { force: true })
 
-  const fd = fs.openSync(tempDataPath, 'w')
-  const entries = []
+  // Try to resume from a previous interrupted build
+  let resumeFrom = null
+  let entries = []
   let tileOffset = 0
+
+  if (!args.noResume && fs.existsSync(checkpointPath) && fs.existsSync(entriesLogPath) && fs.existsSync(tempDataPath)) {
+    try {
+      const cp = JSON.parse(fs.readFileSync(checkpointPath, 'utf8'))
+      const lines = fs.readFileSync(entriesLogPath, 'utf8').trim().split('\n').filter(Boolean)
+      entries = lines.map(l => JSON.parse(l))
+      tileOffset = cp.tileOffset
+      resumeFrom = { zoom: cp.lastCompletedZoom, xEnd: cp.lastCompletedXEnd }
+      console.log(`Resuming from checkpoint: ${entries.length} entries, z${cp.lastCompletedZoom} x0-${cp.lastCompletedXEnd}, ${tileOffset} bytes`)
+    } catch (e) {
+      console.warn(`Checkpoint load failed (${e.message}), starting fresh`)
+      resumeFrom = null
+      entries = []
+      tileOffset = 0
+    }
+  }
+
+  if (!resumeFrom) {
+    fs.rmSync(tempDataPath, { force: true })
+    fs.rmSync(entriesLogPath, { force: true })
+    fs.rmSync(checkpointPath, { force: true })
+  }
+
+  const fd = fs.openSync(tempDataPath, resumeFrom ? 'r+' : 'w')
   let chunkNumber = 0
   const rangeByZoom = []
 
@@ -61,8 +87,15 @@ async function main () {
       for (let xStart = range.minX; xStart <= range.maxX; xStart += zoomChunkSize) {
         const xEnd = Math.min(range.maxX, xStart + zoomChunkSize - 1)
         chunkNumber += 1
+
+        if (resumeFrom && (zoom < resumeFrom.zoom || (zoom === resumeFrom.zoom && xEnd <= resumeFrom.xEnd))) {
+          console.log(`Chunk ${chunkNumber}: z ${zoom}, x ${xStart}-${xEnd}, skipped (resumed)`)
+          continue
+        }
+
         const chunkStartedAt = Date.now()
         const tiles = await buildChunk(source, { bbox, zoom, xStart, xEnd, minY: range.minY, maxY: range.maxY, snapGrid })
+        const entriesBeforeChunk = entries.length
         for (const tile of tiles) {
           const mvt = Buffer.from(vtpbf.fromVectorTileJs({
             layers: {
@@ -70,7 +103,7 @@ async function main () {
             }
           }))
           const data = zlib.gzipSync(mvt)
-          fs.writeSync(fd, data)
+          fs.writeSync(fd, data, 0, data.length, tileOffset)
           entries.push({
             tileId: zxyToTileId(zoom, tile.x, tile.y),
             offset: tileOffset,
@@ -81,6 +114,13 @@ async function main () {
         }
         const elapsed = ((Date.now() - chunkStartedAt) / 1000).toFixed(1)
         console.log(`Chunk ${chunkNumber}: z ${zoom}, x ${xStart}-${xEnd}, tiles ${tiles.length}, elapsed ${elapsed} s`)
+
+        const newEntries = entries.slice(entriesBeforeChunk)
+        if (newEntries.length > 0) {
+          fs.appendFileSync(entriesLogPath, newEntries.map(e => JSON.stringify(e)).join('\n') + '\n')
+        }
+        fs.writeFileSync(checkpointPath, JSON.stringify({ tileOffset, lastCompletedZoom: zoom, lastCompletedXEnd: xEnd }))
+
         if (global.gc) global.gc()
       }
     }
@@ -107,6 +147,8 @@ async function main () {
   entries.sort((a, b) => a.tileId - b.tileId)
   writePmtiles({ output, tempDataPath, entries, metadata, minZoom, maxZoom, bbox })
   fs.rmSync(tempDataPath, { force: true })
+  fs.rmSync(checkpointPath, { force: true })
+  fs.rmSync(entriesLogPath, { force: true })
 
   const elapsedSeconds = (Date.now() - startedAt) / 1000
   console.log(`Wrote ${output}`)
@@ -181,7 +223,13 @@ function addSegmentTiles (byId, segment, options) {
         })
       }
       const projected = snapSegment(projectSegmentToTile(segment, x, y, options.zoom), options.snapGrid || 1)
-      if (projected[0].x === projected[1].x && projected[0].y === projected[1].y) continue
+      // If the segment collapses to a single point after projection and snapping, force it to a
+      // minimal 1-grid-unit marker rather than discarding it. This guarantees that any tile
+      // containing coastline at a finer zoom will also be non-empty at this zoom, which is
+      // required for the hierarchical pre-filter in signalk-distance-to-shore to work correctly.
+      if (projected[0].x === projected[1].x && projected[0].y === projected[1].y) {
+        projected[1] = { x: projected[0].x + (options.snapGrid || 1), y: projected[0].y }
+      }
       const key = segmentKey(projected)
       const tile = byId.get(id)
       if (tile.keys.has(key)) continue
@@ -456,6 +504,7 @@ function parseArgs (argv) {
     else if (arg === '--name') args.name = argv[++i]
     else if (arg === '--description') args.description = argv[++i]
     else if (arg === '--attribution') args.attribution = argv[++i]
+    else if (arg === '--no-resume') args.noResume = true
     else throw new Error(`Unknown argument: ${arg}`)
   }
   return args
@@ -496,5 +545,6 @@ Options:
   --name <name>        Chart display name
   --description <text> Chart description
   --attribution <text> Chart attribution
+  --no-resume          Ignore any existing checkpoint and start fresh
 `)
 }
