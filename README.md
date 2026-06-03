@@ -141,10 +141,22 @@ Download the `.pmtiles` file from the GitHub release and place it somewhere pers
 
 Then configure `signalk-distance-to-shore` to use that file.
 
+## MBTiles Experiment
+
+The PMTiles release asset can be converted to vector MBTiles for use with chart-provider plugins such as `signalk-charts-provider-simple`:
+
+```sh
+python3 tools/convert-pmtiles-to-mbtiles.py \
+  --input dist/world-display-z0-z11-runtime-z12.pmtiles \
+  --output dist/world-display-z0-z11-runtime-z12.mbtiles \
+  --name "Distance To Shore Coastline - World"
+```
+
+The generated MBTiles keeps the same MVT `coastline` layer and uses standard TMS `tile_row` storage. It can be served by `signalk-charts-provider-simple` and exposed as a normal Signal K chart resource.
+
 ## Attribution
 
 Generated coastline data is derived from OpenStreetMap and must keep appropriate attribution.
 
 - OpenStreetMap contributors
 - https://www.openstreetmap.org/copyright
-
