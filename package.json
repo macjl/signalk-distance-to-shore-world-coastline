@@ -1,0 +1,31 @@
+{
+  "name": "signalk-distance-to-shore-world-coastline",
+  "version": "2026.06.03",
+  "description": "World PMTiles coastline dataset for signalk-distance-to-shore.",
+  "private": true,
+  "scripts": {
+    "build:world": "node tools/build-world-pmtiles.js",
+    "checksum": "sha256sum dist/world-display-z0-z11-runtime-z12.pmtiles dist/world-display-z0-z11-runtime-z12.metadata.json > checksums/SHA256SUMS",
+    "verify": "pmtiles verify dist/world-display-z0-z11-runtime-z12.pmtiles"
+  },
+  "keywords": [
+    "signalk",
+    "pmtiles",
+    "mvt",
+    "coastline",
+    "openstreetmap"
+  ],
+  "author": "Jean-Laurent Girod (@macjl)",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/macjl/signalk-distance-to-shore-world-coastline#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/macjl/signalk-distance-to-shore-world-coastline.git"
+  },
+  "devDependencies": {
+    "pmtiles": "^4.4.1",
+    "shapefile": "^0.6.6",
+    "vt-pbf": "^3.1.3"
+  }
+}
+
