@@ -181,7 +181,13 @@ function addSegmentTiles (byId, segment, options) {
         })
       }
       const projected = snapSegment(projectSegmentToTile(segment, x, y, options.zoom), options.snapGrid || 1)
-      if (projected[0].x === projected[1].x && projected[0].y === projected[1].y) continue
+      // If the segment collapses to a single point after projection and snapping, force it to a
+      // minimal 1-grid-unit marker rather than discarding it. This guarantees that any tile
+      // containing coastline at a finer zoom will also be non-empty at this zoom, which is
+      // required for the hierarchical pre-filter in signalk-distance-to-shore to work correctly.
+      if (projected[0].x === projected[1].x && projected[0].y === projected[1].y) {
+        projected[1] = { x: projected[0].x + (options.snapGrid || 1), y: projected[0].y }
+      }
       const key = segmentKey(projected)
       const tile = byId.get(id)
       if (tile.keys.has(key)) continue
