@@ -4,8 +4,8 @@ Bug fix release: guarantee non-empty parent tiles for any coastline feature.
 
 Assets:
 
-- `world-display-z0-z11-runtime-z12.mbtiles`
-- `SHA256SUMS`
+- `world-display-z0-z11-runtime-z12.mbtiles.gz` (gzip-compressed, decompress before use)
+- `SHA256SUMS` (checksums for both `.mbtiles.gz` and uncompressed `.mbtiles`)
 
 **Fix:** Coastline segments that collapsed to a single point after tile projection and coordinate snapping were previously silently discarded. They are now preserved as a minimal 1-unit marker. This guarantees that any tile containing coastline at a finer zoom is also non-empty at coarser zooms, which is required for the hierarchical pre-filter in `signalk-distance-to-shore` to work correctly.
 
